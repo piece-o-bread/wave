@@ -7,6 +7,7 @@
   <style>
     html, body {
       margin: 0;
+      width: 100%;
       height: 100%;
       overflow: hidden;
       background: #0b1020;
@@ -15,121 +16,129 @@
       -webkit-user-select: none;
       touch-action: none;
     }
+
     canvas {
       display: block;
       width: 100vw;
       height: 100vh;
-      background: linear-gradient(180deg, #101a3b 0%, #090d19 100%);
     }
+
     .hud {
       position: fixed;
+      top: 14px;
+      left: 14px;
+      color: white;
+      font-size: 18px;
+      font-weight: 700;
+      text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+      z-index: 2;
+    }
+
+    .center {
+      position: fixed;
       inset: 0;
-      pointer-events: none;
-      color: #fff;
-    }
-    .topbar {
       display: flex;
-      justify-content: space-between;
-      padding: 16px 18px;
-      font-size: 14px;
-      opacity: 0.92;
-      text-shadow: 0 2px 6px rgba(0,0,0,0.45);
-    }
-    .centerMsg {
-      position: absolute;
-      left: 50%;
-      top: 42%;
-      transform: translate(-50%, -50%);
+      align-items: center;
+      justify-content: center;
+      color: white;
       text-align: center;
-      width: min(560px, 92vw);
       pointer-events: none;
-      text-shadow: 0 4px 12px rgba(0,0,0,0.55);
+      z-index: 2;
     }
-    .centerMsg h1 {
-      margin: 0 0 8px;
-      font-size: clamp(28px, 5vw, 54px);
-      letter-spacing: 1px;
+
+    .panel {
+      background: rgba(10, 16, 32, 0.72);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 18px;
+      padding: 22px 28px;
+      box-shadow: 0 14px 40px rgba(0,0,0,0.35);
+      backdrop-filter: blur(8px);
+      max-width: 90vw;
     }
-    .centerMsg p {
-      margin: 0;
-      font-size: clamp(14px, 2vw, 18px);
+
+    .title {
+      font-size: 34px;
+      font-weight: 900;
+      margin-bottom: 10px;
+    }
+
+    .subtitle {
+      font-size: 16px;
       opacity: 0.9;
       line-height: 1.5;
     }
-    .btns {
-      position: fixed;
-      right: 16px;
-      bottom: 16px;
-      display: flex;
-      gap: 10px;
-      pointer-events: auto;
-    }
-    button {
-      border: 0;
-      background: rgba(255,255,255,0.12);
-      color: white;
-      padding: 10px 14px;
-      border-radius: 12px;
-      font-size: 14px;
-      cursor: pointer;
-      backdrop-filter: blur(8px);
-      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-    }
-    button:hover {
-      background: rgba(255,255,255,0.18);
-    }
-    .hint {
-      position: fixed;
-      left: 16px;
-      bottom: 16px;
-      color: rgba(255,255,255,0.8);
-      font-size: 13px;
-      text-shadow: 0 2px 6px rgba(0,0,0,0.45);
-      pointer-events: none;
+
+    .hidden {
+      display: none;
     }
   </style>
 </head>
 <body>
-  <canvas id="game"></canvas>
+  <div class="hud" id="hud">Score: 0</div>
 
-  <div class="hud">
-    <div class="topbar">
-      <div id="levelText">Level 1</div>
-      <div id="progressText">0%</div>
-      <div id="statusText">Press Space / Hold Mouse / Touch</div>
+  <div class="center" id="startScreen">
+    <div class="panel">
+      <div class="title">Wave Mode</div>
+      <div class="subtitle">
+        Hold Space, Mouse, or Touch to rise<br />
+        Release to drop<br />
+        Press Enter or click to start
+      </div>
     </div>
-
-    <div class="centerMsg" id="centerMsg">
-      <h1>WAVE MODE</h1>
-      <p>
-        Hold to go up, release to go down.<br>
-        Survive the tunnels and finish all levels.
-      </p>
-    </div>
-
-    <div class="btns">
-      <button id="restartBtn">Restart</button>
-      <button id="nextBtn">Next Level</button>
-    </div>
-
-    <div class="hint">Tip: wave movement is all about rhythm. Tiny taps help.</div>
   </div>
+
+  <div class="center hidden" id="gameOverScreen">
+    <div class="panel">
+      <div class="title">Game Over</div>
+      <div class="subtitle">
+        Press R to restart<br />
+        or click / tap to try again
+      </div>
+    </div>
+  </div>
+
+  <canvas id="game"></canvas>
 
   <script>
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d");
-
-    const levelText = document.getElementById("levelText");
-    const progressText = document.getElementById("progressText");
-    const statusText = document.getElementById("statusText");
-    const centerMsg = document.getElementById("centerMsg");
-    const restartBtn = document.getElementById("restartBtn");
-    const nextBtn = document.getElementById("nextBtn");
+    const hud = document.getElementById("hud");
+    const startScreen = document.getElementById("startScreen");
+    const gameOverScreen = document.getElementById("gameOverScreen");
 
     let W = 0, H = 0, dpr = 1;
 
+    const bgImg = new Image();
+    bgImg.src = "https://i.imgur.com/8nBgpwT.png";
+
+    const shipImg = new Image();
+    shipImg.src = "https://i.imgur.com/Rz2hHyu.png";
+
+    const game = {
+      state: "start",
+      score: 0,
+      time: 0,
+      speed: 6.7,
+      cameraX: 0,
+      ship: {
+        wx: 180,
+        y: 0,
+        hold: false,
+        angle: 0
+      },
+      obstacles: [],
+      particles: [],
+      trail: []
+    };
+
+    let spawnTimer = 0;
+
+    function clamp(v, min, max) {
+      return Math.max(min, Math.min(max, v));
+    }
+
     function resize() {
-      dpr = Math.max(1, window.devicePixelRatio || 1);
+      dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
       W = window.innerWidth;
       H = window.innerHeight;
       canvas.width = Math.floor(W * dpr);
@@ -137,367 +146,335 @@
       canvas.style.width = W + "px";
       canvas.style.height = H + "px";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      if (game.ship) {
+        game.ship.y = clamp(game.ship.y || H / 2, 20, H - 20);
+      }
     }
+
     window.addEventListener("resize", resize);
-    resize();
 
-    const levels = [
-      {
-        name: "Level 1",
-        speed: 270,
-        length: 2600,
-        bg1: "#101a3b",
-        bg2: "#090d19",
-        obstacles: [
-          { x: 520, w: 90, gapY: 180, gapH: 170 },
-          { x: 860, w: 100, gapY: 290, gapH: 170 },
-          { x: 1180, w: 90, gapY: 160, gapH: 180 },
-          { x: 1480, w: 110, gapY: 270, gapH: 160 },
-          { x: 1860, w: 90, gapY: 190, gapH: 180 },
-          { x: 2200, w: 120, gapY: 300, gapH: 150 }
-        ]
-      },
-      {
-        name: "Level 2",
-        speed: 305,
-        length: 3000,
-        bg1: "#1a1033",
-        bg2: "#090714",
-        obstacles: [
-          { x: 380, w: 95, gapY: 140, gapH: 145 },
-          { x: 640, w: 80, gapY: 320, gapH: 145 },
-          { x: 920, w: 120, gapY: 170, gapH: 150 },
-          { x: 1260, w: 90, gapY: 285, gapH: 145 },
-          { x: 1550, w: 110, gapY: 130, gapH: 165 },
-          { x: 1880, w: 100, gapY: 315, gapH: 130 },
-          { x: 2250, w: 95, gapY: 190, gapH: 150 },
-          { x: 2560, w: 120, gapY: 280, gapH: 140 }
-        ]
-      },
-      {
-        name: "Level 3",
-        speed: 340,
-        length: 3300,
-        bg1: "#082a2d",
-        bg2: "#050b0d",
-        obstacles: [
-          { x: 360, w: 80, gapY: 175, gapH: 135 },
-          { x: 560, w: 110, gapY: 285, gapH: 120 },
-          { x: 820, w: 95, gapY: 145, gapH: 145 },
-          { x: 1100, w: 130, gapY: 300, gapH: 120 },
-          { x: 1420, w: 90, gapY: 180, gapH: 135 },
-          { x: 1680, w: 110, gapY: 260, gapH: 125 },
-          { x: 1980, w: 100, gapY: 140, gapH: 150 },
-          { x: 2280, w: 120, gapY: 290, gapH: 120 },
-          { x: 2620, w: 90, gapY: 190, gapH: 145 },
-          { x: 2920, w: 120, gapY: 310, gapH: 115 }
-        ]
+    function resetGame() {
+      game.state = "playing";
+      game.score = 0;
+      game.time = 0;
+      game.speed = 6.7;
+      game.cameraX = 0;
+      game.ship.wx = 180;
+      game.ship.y = H / 2;
+      game.ship.hold = false;
+      game.ship.angle = 0;
+      game.obstacles.length = 0;
+      game.particles.length = 0;
+      game.trail.length = 0;
+      spawnTimer = 0;
+      startScreen.classList.add("hidden");
+      gameOverScreen.classList.add("hidden");
+    }
+
+    function gameOver() {
+      if (game.state !== "playing") return;
+      game.state = "over";
+      gameOverScreen.classList.remove("hidden");
+    }
+
+    function spawnObstacle() {
+      const gapBase = Math.max(160, 240 - game.time * 0.25);
+      const gap = clamp(gapBase, 120, 240);
+      const margin = 70;
+      const center = margin + Math.random() * (H - margin * 2);
+      const topHeight = Math.max(0, center - gap / 2);
+      const bottomY = center + gap / 2;
+
+      game.obstacles.push({
+        wx: game.cameraX + W + 60,
+        w: 70,
+        topHeight,
+        bottomY
+      });
+    }
+
+    function addWaveParticles() {
+      for (let i = 0; i < 2; i++) {
+        game.particles.push({
+          x: game.ship.wx - game.cameraX - 10,
+          y: game.ship.y + (Math.random() * 12 - 6),
+          vx: -1.5 - Math.random() * 1.6,
+          vy: (Math.random() - 0.5) * 1.6,
+          life: 1,
+          size: 1.8 + Math.random() * 2.4
+        });
       }
-    ];
-
-    let levelIndex = 0;
-    let player = {};
-    let worldX = 0;
-    let holding = false;
-    let started = false;
-    let dead = false;
-    let won = false;
-    let shake = 0;
-    let lastTime = performance.now();
-
-    function currentLevel() {
-      return levels[levelIndex];
     }
 
-    function resetLevel() {
-      const lvl = currentLevel();
-      player = {
-        x: 160,
-        y: H * 0.55,
-        size: 20,
-        vy: 0
-      };
-      worldX = 0;
-      holding = false;
-      started = false;
-      dead = false;
-      won = false;
-      shake = 0;
-      centerMsg.style.display = "block";
-      updateHud();
-      document.body.style.background = `linear-gradient(180deg, ${lvl.bg1} 0%, ${lvl.bg2} 100%)`;
+    function drawBackground() {
+      if (bgImg.complete && bgImg.naturalWidth > 0) {
+        const imgRatio = bgImg.naturalWidth / bgImg.naturalHeight;
+        const canvasRatio = W / H;
+
+        let sx = 0, sy = 0, sw = bgImg.naturalWidth, sh = bgImg.naturalHeight;
+
+        if (imgRatio > canvasRatio) {
+          sw = bgImg.naturalHeight * canvasRatio;
+          sx = (bgImg.naturalWidth - sw) / 2;
+        } else {
+          sh = bgImg.naturalWidth / canvasRatio;
+          sy = (bgImg.naturalHeight - sh) / 2;
+        }
+
+        ctx.drawImage(bgImg, sx, sy, sw, sh, 0, 0, W, H);
+      } else {
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, "#0b1020");
+        grad.addColorStop(1, "#101a33");
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+      }
     }
 
-    function updateHud() {
-      levelText.textContent = currentLevel().name;
-      const pct = Math.max(0, Math.min(100, Math.floor((worldX / currentLevel().length) * 100)));
-      progressText.textContent = pct + "%";
-      statusText.textContent = dead ? "U R DEAD. Press R To Restart or N for the next level" : won ? "Level cleared!" : "Press Space / Hold Mouse / Touch";
-      nextBtn.disabled = !won;
-    }
+    function drawTrail() {
+      if (game.trail.length < 2) return;
 
-    function goNextLevel() {
-      levelIndex = (levelIndex + 1) % levels.length;
-      resetLevel();
-    }
-
-    function crash() {
-      dead = true;
-      started = false;
-      shake = 12;
-      centerMsg.style.display = "block";
-      centerMsg.innerHTML = `
-        <h1>U R DEAD</h1>
-        <p>Press R To Restart.</p>
-      `;
-      updateHud();
-    }
-
-    function win() {
-      won = true;
-      started = false;
-      centerMsg.style.display = "block";
-      centerMsg.innerHTML = `
-        <h1>LEVEL COMPLETE</h1>
-        <p>ooo u got some skills. Click N for the next level or R if you wanna try again :D.</p>
-      `;
-      updateHud();
-    }
-
-    function rectsIntersect(ax, ay, aw, ah, bx, by, bw, bh) {
-      return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
-    }
-
-    function drawBackground(lvl) {
-      const grad = ctx.createLinearGradient(0, 0, 0, H);
-      grad.addColorStop(0, lvl.bg1);
-      grad.addColorStop(1, lvl.bg2);
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, W, H);
-
-      const gridSpacing = 48;
       ctx.save();
-      ctx.globalAlpha = 0.08;
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 1;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
 
-      for (let x = -((worldX * 0.35) % gridSpacing); x < W; x += gridSpacing) {
+      for (let i = 1; i < game.trail.length; i++) {
+        const a = game.trail[i - 1];
+        const b = game.trail[i];
+        const alpha = i / game.trail.length;
+
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.strokeStyle = "#8fd3ff";
+        ctx.lineWidth = 5 * alpha;
         ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, H);
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
         ctx.stroke();
       }
-      for (let y = -((worldX * 0.18) % gridSpacing); y < H; y += gridSpacing) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(W, y);
-        ctx.stroke();
+
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < game.trail.length; i++) {
+        const p = game.trail[i];
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
       }
+      ctx.stroke();
+
       ctx.restore();
+      ctx.globalAlpha = 1;
     }
 
     function drawPlayer() {
-      const x = player.x;
-      const y = player.y;
-      const s = player.size;
+      const screenX = game.ship.wx - game.cameraX;
+      const s = game.ship;
 
       ctx.save();
-      ctx.translate(x, y);
-      const angle = holding ? -Math.PI / 4 : Math.PI / 4;
-      ctx.rotate(angle);
+      ctx.translate(screenX, s.y);
 
-      ctx.fillStyle = "#ffffff";
-      ctx.beginPath();
-      ctx.moveTo(-s * 0.95, -s * 0.6);
-      ctx.lineTo(s * 1.15, 0);
-      ctx.lineTo(-s * 0.95, s * 0.6);
-      ctx.closePath();
-      ctx.fill();
+      // 90 degrees clockwise, plus the wave tilt.
+      ctx.rotate(Math.PI / 2 + s.angle);
 
-      ctx.globalAlpha = 0.25;
-      ctx.fillStyle = "#7cc7ff";
-      ctx.beginPath();
-      ctx.arc(0, 0, s * 0.95, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
+      if (shipImg.complete && shipImg.naturalWidth > 0) {
+        // Keep the image proportions so it does not get squished.
+        const scale = 0.08;
+        const drawW = shipImg.naturalWidth * scale;
+        const drawH = shipImg.naturalHeight * scale;
+        ctx.drawImage(shipImg, -drawW / 2, -drawH / 2, drawW, drawH);
+      } else {
+        ctx.fillStyle = "#8fd3ff";
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2;
 
-    function drawObstacle(o) {
-      const screenX = o.x - worldX;
-      const topH = o.gapY;
-      const bottomY = o.gapY + o.gapH;
-      const bottomH = H - bottomY;
-      const w = o.w;
-
-      ctx.save();
-      ctx.fillStyle = "#d9e3ff";
-      ctx.shadowColor = "rgba(0,0,0,0.25)";
-      ctx.shadowBlur = 10;
-
-      ctx.fillRect(screenX, 0, w, topH);
-      ctx.fillRect(screenX, bottomY, w, bottomH);
-
-      ctx.restore();
-
-      ctx.save();
-      ctx.globalAlpha = 0.16;
-      ctx.fillStyle = "#000";
-      ctx.fillRect(screenX + 6, 0, 5, topH);
-      ctx.fillRect(screenX + 6, bottomY, 5, bottomH);
-      ctx.restore();
-    }
-
-    function update(dt) {
-      const lvl = currentLevel();
-
-      if (started && !dead && !won) {
-        worldX += lvl.speed * dt;
-        if (worldX > lvl.length) {
-          worldX = lvl.length;
-          win();
-        }
-
-        const moveSpeed = 490;
-        player.y += (holding ? -1 : 1) * moveSpeed * dt;
-
-        if (player.y < 0 || player.y > H) {
-          crash();
-        }
-
-        for (const o of lvl.obstacles) {
-          const sx = o.x - worldX;
-          const sy1 = 0;
-          const sh1 = o.gapY;
-          const sy2 = o.gapY + o.gapH;
-          const sh2 = H - sy2;
-
-          const px = player.x - player.size * 0.7;
-          const py = player.y - player.size * 0.7;
-          const ps = player.size * 1.4;
-
-          if (rectsIntersect(px, py, ps, ps, sx, sy1, o.w, sh1) ||
-              rectsIntersect(px, py, ps, ps, sx, sy2, o.w, sh2)) {
-            crash();
-            break;
-          }
-        }
-
-        updateHud();
+        ctx.beginPath();
+        ctx.moveTo(-10, -6);
+        ctx.lineTo(10, 0);
+        ctx.lineTo(-10, 6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
       }
 
-      if (shake > 0) shake = Math.max(0, shake - dt * 40);
+      ctx.restore();
+    }
+
+    function drawObstacles() {
+      for (const o of game.obstacles) {
+        const x = o.wx - game.cameraX;
+
+        ctx.fillStyle = "#141414";
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2;
+        ctx.lineJoin = "round";
+
+        ctx.fillRect(x, 0, o.w, o.topHeight);
+        ctx.strokeRect(x, 0, o.w, o.topHeight);
+
+        ctx.fillRect(x, o.bottomY, o.w, H - o.bottomY);
+        ctx.strokeRect(x, o.bottomY, o.w, H - o.bottomY);
+
+        ctx.fillStyle = "rgba(255,255,255,0.12)";
+        ctx.fillRect(x + o.w - 10, 0, 10, o.topHeight);
+        ctx.fillRect(x + o.w - 10, o.bottomY, 10, H - o.bottomY);
+      }
+    }
+
+    function drawParticles() {
+      for (const p of game.particles) {
+        ctx.globalAlpha = Math.max(0, p.life);
+        ctx.fillStyle = "#8fd3ff";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function collideRectCircle(px, py, radius, rx, ry, rw, rh) {
+      const cx = clamp(px, rx, rx + rw);
+      const cy = clamp(py, ry, ry + rh);
+      const dx = px - cx;
+      const dy = py - cy;
+      return dx * dx + dy * dy < radius * radius;
+    }
+
+    function update() {
+      if (game.state !== "playing") return;
+
+      game.time += 1 / 60;
+      game.score += 1 / 60;
+      game.speed = 6.7 + game.time * 0.025;
+
+      const ship = game.ship;
+      const screenX = ship.wx - game.cameraX;
+
+      // Wave movement, sharp and zigzaggy.
+      const waveSpeed = 6.5 + game.time * 0.01;
+      if (ship.hold) {
+        ship.y -= waveSpeed;
+        ship.angle = -0.60;
+      } else {
+        ship.y += waveSpeed;
+        ship.angle = 0.60;
+      }
+
+      // Small forward drift so the wave feels alive.
+      ship.wx += game.speed * 0.9;
+      game.cameraX += game.speed * 0.9;
+
+      ship.y = clamp(ship.y, 0, H);
+
+      game.trail.push({ x: screenX, y: ship.y });
+      if (game.trail.length > 0) game.trail.shift();
+
+      addWaveParticles();
+
+      if (ship.y <= 0 || ship.y >= H) {
+        gameOver();
+      }
+
+      spawnTimer++;
+      const spawnEvery = Math.max(80, 130 - game.time * 0.45);
+      if (spawnTimer >= spawnEvery) {
+        spawnTimer = 0;
+        spawnObstacle();
+      }
+
+      const shipRadius = 12;
+      const shipScreenX = ship.wx - game.cameraX;
+
+      for (const o of game.obstacles) {
+        const ox = o.wx - game.cameraX;
+
+        const topHit = collideRectCircle(shipScreenX, ship.y, shipRadius, ox, 0, o.w, o.topHeight);
+        const bottomHit = collideRectCircle(shipScreenX, ship.y, shipRadius, ox, o.bottomY, o.w, H - o.bottomY);
+
+        if (topHit || bottomHit) {
+          gameOver();
+        }
+      }
+
+      game.obstacles = game.obstacles.filter(o => (o.wx - game.cameraX) + o.w > -60);
+
+      for (const p of game.particles) {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 0.04;
+      }
+      game.particles = game.particles.filter(p => p.life > 0);
     }
 
     function render() {
-      const lvl = currentLevel();
-      ctx.save();
-
-      if (shake > 0) {
-        ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
-      }
-
-      drawBackground(lvl);
-
-      for (const o of lvl.obstacles) {
-        const sx = o.x - worldX;
-        if (sx > -200 && sx < W + 200) drawObstacle(o);
-      }
-
-      // finish line glow
-      if (!won) {
-        const fx = lvl.length - worldX;
-        ctx.save();
-        ctx.globalAlpha = 0.25;
-        ctx.fillStyle = "#8bf3ff";
-        ctx.fillRect(fx, 0, 8, H);
-        ctx.restore();
-      }
-
+      drawBackground();
+      drawTrail();
+      drawParticles();
+      drawObstacles();
       drawPlayer();
 
-      // progress bar
-      ctx.save();
-      ctx.fillStyle = "rgba(255,255,255,0.12)";
-      ctx.fillRect(22, H - 30, W - 44, 8);
-      ctx.fillStyle = won ? "#8cffb0" : "#8bc7ff";
-      ctx.fillRect(22, H - 30, (W - 44) * Math.min(1, worldX / lvl.length), 8);
-      ctx.restore();
-
-      ctx.restore();
+      hud.textContent = "Score: " + Math.floor(game.score);
     }
 
-    function loop(now) {
-      const dt = Math.min(0.033, (now - lastTime) / 1000);
-      lastTime = now;
-      update(dt);
+    function loop() {
+      update();
       render();
       requestAnimationFrame(loop);
     }
 
-    function startGame() {
-      if (dead || won) {
-        centerMsg.style.display = "none";
-      } else if (!started) {
-        started = true;
-        centerMsg.style.display = "none";
-      }
-      dead = false;
-      won = false;
-      updateHud();
-    }
-
-    function setHold(v) {
-      holding = v;
-      if (v && !started && !dead && !won) {
-        started = true;
-        centerMsg.style.display = "none";
-      }
+    function setHold(on) {
+      if (game.state === "start") resetGame();
+      if (game.state === "over") resetGame();
+      game.ship.hold = on;
     }
 
     window.addEventListener("keydown", (e) => {
-      if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") {
+      if (e.code === "Space") {
         e.preventDefault();
         setHold(true);
       }
-      if (e.code === "Enter") {
-        if (dead || won) resetLevel();
+      if (e.code === "Enter" && game.state !== "playing") {
+        resetGame();
       }
       if (e.code === "KeyR") {
-        resetLevel();
-      }
-      if (e.code === "KeyN") {
-        goNextLevel();
+        resetGame();
       }
     });
 
     window.addEventListener("keyup", (e) => {
-      if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") {
-        e.preventDefault();
-        setHold(false);
+      if (e.code === "Space") {
+        game.ship.hold = false;
       }
     });
 
-    window.addEventListener("mousedown", () => setHold(true));
-    window.addEventListener("mouseup", () => setHold(false));
-    window.addEventListener("mouseleave", () => setHold(false));
+    window.addEventListener("mousedown", () => {
+      setHold(true);
+    });
+
+    window.addEventListener("mouseup", () => {
+      game.ship.hold = false;
+    });
 
     window.addEventListener("touchstart", (e) => {
       e.preventDefault();
       setHold(true);
     }, { passive: false });
 
-    window.addEventListener("touchend", (e) => {
-      e.preventDefault();
-      setHold(false);
-    }, { passive: false });
-
-    restartBtn.addEventListener("click", () => resetLevel());
-    nextBtn.addEventListener("click", () => {
-      if (won) goNextLevel();
+    window.addEventListener("touchend", () => {
+      game.ship.hold = false;
     });
 
-    resetLevel();
-    requestAnimationFrame(loop);
+    window.addEventListener("click", () => {
+      if (game.state !== "playing") {
+        resetGame();
+      }
+    });
+
+    resize();
+    game.ship.y = H / 0;
+    render();
+    loop();
   </script>
 </body>
 </html>
